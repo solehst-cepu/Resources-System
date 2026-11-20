@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import type {
@@ -23,8 +24,8 @@ import type {
   StockOpnameRecord,
   Unit,
   UserProfile,
-} from '../src/types/lrms.ts';
-import { calculatePhotocopyMetrics } from '../src/utils/calculations.ts';
+} from '../src/types/lrms.js';
+import { calculatePhotocopyMetrics } from '../src/utils/calculations.js';
 
 export interface LocalDatabaseState {
   users: UserProfile[];
@@ -45,7 +46,10 @@ export interface LocalDatabaseState {
   auditLogs: AuditLogRecord[];
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const IS_VERCEL = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+const DATA_DIR = IS_VERCEL
+  ? path.join(os.tmpdir(), 'lrms-data')
+  : path.resolve(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'lrms-store.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 

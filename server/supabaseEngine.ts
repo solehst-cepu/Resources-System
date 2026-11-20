@@ -5,9 +5,9 @@ import type {
   OrderStatus,
   ServiceType,
   UserProfile,
-} from '../src/types/lrms.ts';
-import { calculatePhotocopyMetrics, isLazuardiEmail } from '../src/utils/calculations.ts';
-import { getAllowedDomain, getSupabaseAdmin } from './supabaseAdmin.ts';
+} from '../src/types/lrms.js';
+import { calculatePhotocopyMetrics, isLazuardiEmail } from '../src/utils/calculations.js';
+import { getAllowedDomain, getSupabaseAdmin } from './supabaseAdmin.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',

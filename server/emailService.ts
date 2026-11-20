@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { isSmtpConfigured } from './supabaseAdmin.ts';
+import { isSmtpConfigured } from './supabaseAdmin.js';
 
 export interface MonthlyPhotocopyEmailPayload {
   recipientEmail: string;

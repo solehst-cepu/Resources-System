@@ -5,7 +5,7 @@ import {
   getSupabaseAdmin,
   getSystemModeStatus,
   isSupabaseConfigured,
-} from './supabaseAdmin.ts';
+} from './supabaseAdmin.js';
 import {
   addNotification,
   appendAudit,
@@ -20,7 +20,7 @@ import {
   savePrivateLocalUpload,
   verifySignedFileToken,
   withLocalLock,
-} from './localStore.ts';
+} from './localStore.js';
 import {
   mapSupabaseOrderRow,
   sbCreateOrder,
@@ -29,9 +29,9 @@ import {
   sbListOrders,
   sbUploadAttachment,
   verifySupabaseUser,
-} from './supabaseEngine.ts';
-import { sendMonthlyPhotocopyReportEmail } from './emailService.ts';
-import { calculatePhotocopyMetrics, getRoleLabel, isLazuardiEmail } from '../src/utils/calculations.ts';
+} from './supabaseEngine.js';
+import { sendMonthlyPhotocopyReportEmail } from './emailService.js';
+import { calculatePhotocopyMetrics, getRoleLabel, isLazuardiEmail } from '../src/utils/calculations.js';
 import type {
   AppRole,
   DashboardSummary,
@@ -42,7 +42,7 @@ import type {
   ServiceType,
   StockOpnameLine,
   UserProfile,
-} from '../src/types/lrms.ts';
+} from '../src/types/lrms.js';
 
 interface AuthedRequest extends Request {
   lrmsUser?: UserProfile;
@@ -2772,6 +2772,10 @@ export function createApiRouter(): express.Router {
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
+  });
+
+  router.use((_req, res) => {
+    res.status(404).json({ error: 'Endpoint API tidak ditemukan.' });
   });
 
   return router;

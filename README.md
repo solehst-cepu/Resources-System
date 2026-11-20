@@ -7,7 +7,7 @@
 ## 1. Arsitektur & Teknologi
 
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS v4
-- **Backend API:** Express (`server.ts`) & Vercel Serverless Functions (`api/[...route].ts`)
+- **Backend API:** Express (`server.ts`) & Vercel Serverless Functions (`api/index.ts`)
 - **Database & Auth:** Supabase PostgreSQL + Supabase Auth (Google OAuth `@lazuardi.sch.id`) + Row Level Security (RLS)
 - **Storage:** Supabase Storage Private Bucket (`order-documents`) dengan short-lived Signed URL (60 detik)
 - **Export & Email:** SheetJS (`xlsx`), `jsPDF` + `jspdf-autotable`, CSV (UTF-8 BOM), Nodemailer SMTP / Resend API
@@ -20,7 +20,7 @@
 - `supabase/migrations/002_rls_and_rpcs.sql` — Trigger validasi domain `@lazuardi.sch.id`, kebijakan RLS seluruh tabel, private storage bucket, serta PostgreSQL RPC atomic (`generate_order_number`, `rpc_complete_gallon_delivery`, `rpc_finalize_stock_opname`).
 - `supabase/migrations/003_seed_master_data.sql` — Data awal unit Lazuardi, katalog layanan, lokasi gedung, dan saldo gudang galon.
 - `server/apiRouter.ts` — API router server-side (verifikasi session, RBAC, upload dokumen privat, transaksi stok atomic, email laporan bulanan).
-- `api/[...route].ts` & `vercel.json` — Konfigurasi deployment Vercel Serverless & Cron bulanan.
+- `api/index.ts` & `vercel.json` — Konfigurasi deployment Vercel Serverless & Cron bulanan.
 
 ---
 
