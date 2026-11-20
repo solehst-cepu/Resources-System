@@ -268,7 +268,9 @@ function WorkspaceShell() {
           <div className="flex items-center gap-3 shrink-0">
             {systemStatus?.mode === 'local' && (
               <span className="hidden md:inline-block text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
-                Mode Lokal (Supabase Env Belum Diisi)
+                {systemStatus.hasPublicCredentials
+                  ? 'Mode Lokal (Menunggu SUPABASE_SERVICE_ROLE_KEY di Secrets)'
+                  : 'Mode Lokal (Supabase Env Belum Diisi)'}
               </span>
             )}
 
