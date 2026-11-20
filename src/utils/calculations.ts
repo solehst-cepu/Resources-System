@@ -1,4 +1,4 @@
-import type { PrintSide } from '../types/lrms.ts';
+import type { PrintSide } from '../types/lrms.js';
 
 export interface PhotocopyCalculation {
   pageCount: number;
