@@ -42,21 +42,23 @@ WHERE i.sku = 'GALON-19L'
 ON CONFLICT (item_id, location_id) DO NOTHING;
 
 INSERT INTO public.locations (building, floor, room, unit_id, is_active)
-SELECT 'Gedung SD', 'Lantai 1', 'Ruang Guru SD', id, TRUE FROM public.units WHERE code = 'SD-LAZ'
-UNION ALL
-SELECT 'Gedung SD', 'Lantai 2', 'Tata Usaha SD', id, TRUE FROM public.units WHERE code = 'SD-LAZ'
-UNION ALL
-SELECT 'Gedung TK', 'Lantai 1', 'Ruang Sentra TK', id, TRUE FROM public.units WHERE code = 'TK-LAZ'
-UNION ALL
-SELECT 'Gedung SMP/SMA', 'Lantai 1', 'Ruang Guru SMP', id, TRUE FROM public.units WHERE code = 'SMP-LAZ'
-UNION ALL
-SELECT 'Gedung SMP/SMA', 'Lantai 2', 'Ruang Guru SMA', id, TRUE FROM public.units WHERE code = 'SMA-LAZ'
-UNION ALL
-SELECT 'Gedung Operasional', 'Lantai 1', 'Loket Divisi Resources', id, TRUE FROM public.units WHERE code = 'RES-LAZ'
-UNION ALL
-SELECT 'Gedung Utama', 'Lantai 2', 'Ruang Yayasan & Pimpinan', id, TRUE FROM public.units WHERE code = 'YYS-LAZ'
-UNION ALL
-SELECT 'Gedung Utama', 'Lantai 1', 'Ruang Keuangan & HR', id, TRUE FROM public.units WHERE code = 'FIN-LAZ';
+SELECT v.building, v.floor, v.room, u.id, TRUE
+FROM (
+  VALUES
+    ('Gedung SD', 'Lantai 1', 'Ruang Guru SD', 'SD-LAZ'),
+    ('Gedung SD', 'Lantai 2', 'Tata Usaha SD', 'SD-LAZ'),
+    ('Gedung TK', 'Lantai 1', 'Ruang Sentra TK', 'TK-LAZ'),
+    ('Gedung SMP/SMA', 'Lantai 1', 'Ruang Guru SMP', 'SMP-LAZ'),
+    ('Gedung SMP/SMA', 'Lantai 2', 'Ruang Guru SMA', 'SMA-LAZ'),
+    ('Gedung Operasional', 'Lantai 1', 'Loket Divisi Resources', 'RES-LAZ'),
+    ('Gedung Utama', 'Lantai 2', 'Ruang Yayasan & Pimpinan', 'YYS-LAZ'),
+    ('Gedung Utama', 'Lantai 1', 'Ruang Keuangan & HR', 'FIN-LAZ')
+) AS v(building, floor, room, unit_code)
+JOIN public.units u ON u.code = v.unit_code
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.locations loc
+  WHERE loc.building = v.building AND loc.floor = v.floor AND loc.room = v.room
+);
 
 INSERT INTO public.app_settings (key, value, description) VALUES
   ('allowed_email_domain', '"lazuardi.sch.id"', 'Domain Google Workspace yang diizinkan mengakses LRMS'),
@@ -65,6 +67,8 @@ INSERT INTO public.app_settings (key, value, description) VALUES
   ('monthly_report_day', '1', 'Tanggal pengiriman otomatis laporan bulanan Kepala Unit setiap bulan')
 ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO public.report_schedules (report_type, cron_expression, is_enabled) VALUES
-  ('monthly_photocopy_unit', '0 8 1 * *', TRUE)
-ON CONFLICT DO NOTHING;
+INSERT INTO public.report_schedules (report_type, cron_expression, is_enabled)
+SELECT 'monthly_photocopy_unit', '0 8 1 * *', TRUE
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.report_schedules WHERE report_type = 'monthly_photocopy_unit'
+);

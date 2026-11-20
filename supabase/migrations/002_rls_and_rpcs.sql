@@ -132,44 +132,59 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 -- 4. RLS Policies
 
 -- Profiles
+DROP POLICY IF EXISTS profiles_read_own_or_admin ON public.profiles;
 CREATE POLICY profiles_read_own_or_admin ON public.profiles
   FOR SELECT USING (auth_email_domain_valid() AND (id = auth.uid() OR is_admin_or_super()));
+DROP POLICY IF EXISTS profiles_super_admin_manage ON public.profiles;
 CREATE POLICY profiles_super_admin_manage ON public.profiles
   FOR ALL USING (is_super_admin()) WITH CHECK (is_super_admin());
 
 -- User Roles (Users can read own role; ONLY Super Admin can assign/modify roles)
+DROP POLICY IF EXISTS user_roles_read ON public.user_roles;
 CREATE POLICY user_roles_read ON public.user_roles
   FOR SELECT USING (auth_email_domain_valid() AND (user_id = auth.uid() OR is_admin_or_super()));
+DROP POLICY IF EXISTS user_roles_super_admin_write ON public.user_roles;
 CREATE POLICY user_roles_super_admin_write ON public.user_roles
   FOR ALL USING (is_super_admin()) WITH CHECK (is_super_admin());
 
 -- Master Data (Authenticated school domain can read active master data; Admin Resources & Super Admin manage)
+DROP POLICY IF EXISTS units_read_all_valid ON public.units;
 CREATE POLICY units_read_all_valid ON public.units
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS units_admin_write ON public.units;
 CREATE POLICY units_admin_write ON public.units
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS user_units_read ON public.user_unit_assignments;
 CREATE POLICY user_units_read ON public.user_unit_assignments
   FOR SELECT USING (auth_email_domain_valid() AND (user_id = auth.uid() OR is_admin_or_super()));
+DROP POLICY IF EXISTS user_units_super_admin_write ON public.user_unit_assignments;
 CREATE POLICY user_units_super_admin_write ON public.user_unit_assignments
   FOR ALL USING (is_super_admin()) WITH CHECK (is_super_admin());
 
+DROP POLICY IF EXISTS services_read ON public.service_catalog;
 CREATE POLICY services_read ON public.service_catalog
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS services_admin_write ON public.service_catalog;
 CREATE POLICY services_admin_write ON public.service_catalog
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS locations_read ON public.locations;
 CREATE POLICY locations_read ON public.locations
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS locations_admin_write ON public.locations;
 CREATE POLICY locations_admin_write ON public.locations
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS settings_read ON public.app_settings;
 CREATE POLICY settings_read ON public.app_settings
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS settings_super_admin_write ON public.app_settings;
 CREATE POLICY settings_super_admin_write ON public.app_settings
   FOR ALL USING (is_super_admin()) WITH CHECK (is_super_admin());
 
--- Orders (User reads/creates own; Kepala Unit reads photocopy orders of assigned units; Admin reads/updates all)
+-- Orders (User reads/creates own; Kepala Unit reads service orders of assigned units; Admin reads/updates all)
+DROP POLICY IF EXISTS orders_select ON public.orders;
 CREATE POLICY orders_select ON public.orders
   FOR SELECT USING (
     auth_email_domain_valid() AND (
@@ -179,11 +194,13 @@ CREATE POLICY orders_select ON public.orders
     )
   );
 
+DROP POLICY IF EXISTS orders_insert_own ON public.orders;
 CREATE POLICY orders_insert_own ON public.orders
   FOR INSERT WITH CHECK (
     auth_email_domain_valid() AND requester_id = auth.uid()
   );
 
+DROP POLICY IF EXISTS orders_update ON public.orders;
 CREATE POLICY orders_update ON public.orders
   FOR UPDATE USING (
     auth_email_domain_valid() AND (
@@ -192,6 +209,7 @@ CREATE POLICY orders_update ON public.orders
     )
   );
 
+DROP POLICY IF EXISTS order_items_select ON public.order_items;
 CREATE POLICY order_items_select ON public.order_items
   FOR SELECT USING (
     EXISTS (
@@ -199,11 +217,12 @@ CREATE POLICY order_items_select ON public.order_items
       WHERE o.id = order_id AND (
         o.requester_id = auth.uid()
         OR is_admin_or_super()
-        OR (current_user_role() = 'kepala_unit' AND o.service_type = 'fotokopi' AND o.unit_id IN (SELECT assigned_unit_ids()))
+        OR (current_user_role() = 'kepala_unit' AND o.service_type IN ('fotokopi', 'laminating', 'galon') AND o.unit_id IN (SELECT assigned_unit_ids()))
       )
     )
   );
 
+DROP POLICY IF EXISTS order_history_select ON public.order_status_history;
 CREATE POLICY order_history_select ON public.order_status_history
   FOR SELECT USING (
     EXISTS (
@@ -212,6 +231,7 @@ CREATE POLICY order_history_select ON public.order_status_history
     )
   );
 
+DROP POLICY IF EXISTS order_attachments_select ON public.order_attachments;
 CREATE POLICY order_attachments_select ON public.order_attachments
   FOR SELECT USING (
     EXISTS (
@@ -220,44 +240,58 @@ CREATE POLICY order_attachments_select ON public.order_attachments
     )
   );
 
+DROP POLICY IF EXISTS order_assignments_admin ON public.order_assignments;
 CREATE POLICY order_assignments_admin ON public.order_assignments
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
 -- Inventory (Read for Admin/Super Admin; summary balances readable for authenticated availability check)
+DROP POLICY IF EXISTS inv_items_read ON public.inventory_items;
 CREATE POLICY inv_items_read ON public.inventory_items
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS inv_items_admin_write ON public.inventory_items;
 CREATE POLICY inv_items_admin_write ON public.inventory_items
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_locations_read ON public.inventory_locations;
 CREATE POLICY inv_locations_read ON public.inventory_locations
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS inv_locations_admin_write ON public.inventory_locations;
 CREATE POLICY inv_locations_admin_write ON public.inventory_locations
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_balances_read ON public.inventory_balances;
 CREATE POLICY inv_balances_read ON public.inventory_balances
   FOR SELECT USING (auth_email_domain_valid());
+DROP POLICY IF EXISTS inv_balances_admin_write ON public.inventory_balances;
 CREATE POLICY inv_balances_admin_write ON public.inventory_balances
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_tx_admin ON public.inventory_transactions;
 CREATE POLICY inv_tx_admin ON public.inventory_transactions
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_receipts_admin ON public.inventory_receipts;
 CREATE POLICY inv_receipts_admin ON public.inventory_receipts
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_opnames_admin ON public.inventory_stock_opnames;
 CREATE POLICY inv_opnames_admin ON public.inventory_stock_opnames
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_opname_items_admin ON public.inventory_stock_opname_items;
 CREATE POLICY inv_opname_items_admin ON public.inventory_stock_opname_items
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS inv_adjustments_admin ON public.inventory_adjustments;
 CREATE POLICY inv_adjustments_admin ON public.inventory_adjustments
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
 -- Reports, Notifications & Audit Logs
+DROP POLICY IF EXISTS report_schedules_admin ON public.report_schedules;
 CREATE POLICY report_schedules_admin ON public.report_schedules
   FOR ALL USING (is_admin_or_super()) WITH CHECK (is_admin_or_super());
 
+DROP POLICY IF EXISTS report_logs_read ON public.report_delivery_logs;
 CREATE POLICY report_logs_read ON public.report_delivery_logs
   FOR SELECT USING (
     auth_email_domain_valid() AND (
@@ -266,6 +300,7 @@ CREATE POLICY report_logs_read ON public.report_delivery_logs
     )
   );
 
+DROP POLICY IF EXISTS notifications_read_own ON public.notifications;
 CREATE POLICY notifications_read_own ON public.notifications
   FOR SELECT USING (
     auth_email_domain_valid() AND (
@@ -274,9 +309,11 @@ CREATE POLICY notifications_read_own ON public.notifications
     )
   );
 
+DROP POLICY IF EXISTS notifications_update_own ON public.notifications;
 CREATE POLICY notifications_update_own ON public.notifications
   FOR UPDATE USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS audit_logs_super_admin ON public.audit_logs;
 CREATE POLICY audit_logs_super_admin ON public.audit_logs
   FOR SELECT USING (is_super_admin());
 

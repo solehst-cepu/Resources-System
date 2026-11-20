@@ -270,6 +270,9 @@ export interface AppSettingsMap {
 export interface SystemModeStatus {
   mode: 'supabase' | 'local';
   supabaseConfigured: boolean;
+  hasPublicCredentials?: boolean;
+  hasServiceRoleKey?: boolean;
+  supabaseProjectUrl?: string | null;
   smtpConfigured: boolean;
   allowedDomain: string;
 }

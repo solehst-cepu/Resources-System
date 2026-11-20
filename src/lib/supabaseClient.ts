@@ -1,7 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+function normalizeSupabaseUrl(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  return raw.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+}
+
+const supabaseUrl = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL as string | undefined);
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
 
 export const isFrontendSupabaseReady = Boolean(
   supabaseUrl &&

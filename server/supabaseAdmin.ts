@@ -3,15 +3,31 @@ import type { SystemModeStatus } from '../src/types/lrms.ts';
 
 let cachedAdminClient: SupabaseClient | null = null;
 
+export function normalizeSupabaseUrl(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  return raw.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+}
+
+export function getSupabaseUrl(): string | undefined {
+  const raw = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const cleaned = normalizeSupabaseUrl(raw);
+  if (!cleaned || cleaned.includes('YOUR_PROJECT_REF')) return undefined;
+  return cleaned;
+}
+
+export function hasPublicSupabaseCredentials(): boolean {
+  const url = getSupabaseUrl();
+  const anon = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  return Boolean(url && anon && !anon.includes('YOUR_SUPABASE_ANON_KEY'));
+}
+
+export function hasServiceRoleKey(): boolean {
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  return Boolean(serviceKey && !serviceKey.includes('YOUR_SUPABASE_SERVICE_ROLE_KEY'));
+}
+
 export function isSupabaseConfigured(): boolean {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return Boolean(
-    url &&
-      serviceKey &&
-      !url.includes('YOUR_PROJECT_REF') &&
-      !serviceKey.includes('YOUR_SUPABASE_SERVICE_ROLE_KEY')
-  );
+  return Boolean(getSupabaseUrl() && hasServiceRoleKey());
 }
 
 export function isSmtpConfigured(): boolean {
@@ -30,6 +46,9 @@ export function getSystemModeStatus(): SystemModeStatus {
   return {
     mode: supabaseConfigured ? 'supabase' : 'local',
     supabaseConfigured,
+    hasPublicCredentials: hasPublicSupabaseCredentials(),
+    hasServiceRoleKey: hasServiceRoleKey(),
+    supabaseProjectUrl: getSupabaseUrl() || null,
     smtpConfigured: isSmtpConfigured(),
     allowedDomain: getAllowedDomain(),
   };
@@ -39,8 +58,8 @@ export function getSupabaseAdmin(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;
   if (cachedAdminClient) return cachedAdminClient;
 
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)!;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const url = getSupabaseUrl()!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim();
   cachedAdminClient = createClient(url, serviceKey, {
     auth: {
       autoRefreshToken: false,

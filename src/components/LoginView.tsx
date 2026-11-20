@@ -112,10 +112,25 @@ export function LoginView() {
             </div>
           ) : (
             <div className="mt-6 space-y-6">
-              <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
-                <strong>Mode Evaluasi Lokal Aktif:</strong> Variabel <code className="font-mono">VITE_SUPABASE_URL</code> dan{' '}
-                <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> belum diisi pada environment. Validasi domain{' '}
-                <code className="font-mono">@{allowedDomain}</code> dan seluruh transaksi database berjalan pada server lokal persisten.
+              <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-1.5">
+                {systemStatus?.hasPublicCredentials ? (
+                  <>
+                    <div>
+                      <strong>Supabase Terhubung (Menunggu Service Role Key):</strong> Proyek{' '}
+                      <code className="font-mono">{systemStatus.supabaseProjectUrl}</code> sudah dikonfigurasi pada frontend.
+                    </div>
+                    <div>
+                      Tambahkan <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> di panel <strong>Secrets</strong> dan jalankan{' '}
+                      <code className="font-mono">supabase/setup_all.sql</code> di Supabase SQL Editor untuk mengaktifkan mode produksi penuh. Sementara itu, mode lokal persisten tetap berjalan.
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <strong>Mode Evaluasi Lokal Aktif:</strong> Variabel <code className="font-mono">VITE_SUPABASE_URL</code> dan{' '}
+                    <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> belum diisi pada environment. Validasi domain{' '}
+                    <code className="font-mono">@{allowedDomain}</code> dan seluruh transaksi database berjalan pada server lokal persisten.
+                  </div>
+                )}
               </div>
 
               <form onSubmit={handleLocalSubmit} className="space-y-4">
