@@ -7,7 +7,7 @@ import type {
   UserProfile,
 } from '../src/types/lrms.js';
 import { calculatePhotocopyMetrics, isLazuardiEmail } from '../src/utils/calculations.js';
-import { getAllowedDomain, getSupabaseAdmin } from './supabaseAdmin.js';
+import { assertValidServiceRoleKey, getAllowedDomain, getSupabaseAdmin } from './supabaseAdmin.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -37,6 +37,7 @@ export function resolveHighestPriorityRole(roles: Array<string | null | undefine
 }
 
 export async function verifySupabaseUser(authHeader?: string): Promise<UserProfile> {
+  assertValidServiceRoleKey();
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error('Supabase belum dikonfigurasi');
 
@@ -81,6 +82,11 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
   );
 
   if (upsertProfileError) {
+    if (upsertProfileError.code === '42501' || upsertProfileError.message.toLowerCase().includes('permission denied')) {
+      throw new Error(
+        'Permission denied pada tabel profiles: pastikan SUPABASE_SERVICE_ROLE_KEY menggunakan secret key service_role (bukan anon/publishable) dan jalankan GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role di Supabase SQL Editor.'
+      );
+    }
     // Jika terjadi konflik unik pada kolom email (mis. profil lama memiliki UUID berbeda), selesaikan lewat lookup email
     const { data: existingByEmail } = await admin
       .from('profiles')

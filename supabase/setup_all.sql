@@ -403,6 +403,14 @@ CREATE INDEX IF NOT EXISTS idx_report_logs_period_unit ON public.report_delivery
 -- Migration 002: Auth Trigger, Row Level Security (RLS), Storage & Atomic RPCs
 -- ==============================================================================
 
+-- 0. Ensure Schema & Table Privileges for service_role and authenticated
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
 -- 1. Helper Functions for Authorization & Domain Guard
 CREATE OR REPLACE FUNCTION public.auth_email_domain_valid()
 RETURNS BOOLEAN

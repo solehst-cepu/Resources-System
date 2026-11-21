@@ -272,6 +272,7 @@ export interface SystemModeStatus {
   supabaseConfigured: boolean;
   hasPublicCredentials?: boolean;
   hasServiceRoleKey?: boolean;
+  serviceRoleKeyKind?: 'jwt_service_role' | 'sb_secret' | 'jwt_anon' | 'sb_publishable' | 'missing' | 'unknown';
   supabaseProjectUrl?: string | null;
   smtpConfigured: boolean;
   allowedDomain: string;
