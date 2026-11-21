@@ -91,7 +91,15 @@ BEGIN
         updated_at = NOW();
 
   INSERT INTO public.user_roles (user_id, role)
-  VALUES (NEW.id, 'user')
+  VALUES (
+    NEW.id,
+    CASE
+      WHEN v_email = 'soleh.st@lazuardi.sch.id'
+       AND NOT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'super_admin')
+      THEN 'super_admin'::app_role
+      ELSE 'user'::app_role
+    END
+  )
   ON CONFLICT (user_id) DO NOTHING;
 
   RETURN NEW;

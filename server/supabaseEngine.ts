@@ -65,6 +65,28 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     .from('user_roles')
     .upsert({ user_id: userId, role: 'user' }, { onConflict: 'user_id', ignoreDuplicates: true });
 
+  // Bootstrap Super Admin awal secara aman di sisi server jika belum ada super_admin di database
+  const bootstrapSuperAdmins = (process.env.BOOTSTRAP_SUPER_ADMIN_EMAILS || 'soleh.st@lazuardi.sch.id')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (bootstrapSuperAdmins.includes(email)) {
+    const { count: superAdminCount } = await admin
+      .from('user_roles')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'super_admin');
+
+    if ((superAdminCount ?? 0) === 0) {
+      await admin
+        .from('user_roles')
+        .upsert(
+          { user_id: userId, role: 'super_admin', updated_at: new Date().toISOString() },
+          { onConflict: 'user_id' }
+        );
+    }
+  }
+
   const [{ data: profile }, { data: roleRow }, { data: assignments }] = await Promise.all([
     admin.from('profiles').select('id,email,full_name,avatar_url,is_active,last_login_at').eq('id', userId).single(),
     admin.from('user_roles').select('role').eq('user_id', userId).single(),
