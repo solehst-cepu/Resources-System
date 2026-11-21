@@ -14,10 +14,15 @@ export function setLocalAuthToken(token: string | null): void {
   }
 }
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+async function getAuthHeaders(accessTokenOverride?: string): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
+  if (accessTokenOverride) {
+    headers.Authorization = `Bearer ${accessTokenOverride}`;
+    return headers;
+  }
 
   if (isFrontendSupabaseReady) {
     const sb = getSupabaseClient();
@@ -42,12 +47,14 @@ export async function apiRequest<T>(
   options: {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
+    accessToken?: string;
   } = {}
 ): Promise<T> {
-  const headers = await getAuthHeaders();
+  const headers = await getAuthHeaders(options.accessToken);
   const res = await fetch(`/api${path}`, {
     method: options.method || 'GET',
     headers,
+    cache: 'no-store',
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 

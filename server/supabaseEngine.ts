@@ -17,6 +17,25 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
 ]);
 
+const ROLE_PRIORITY: Record<AppRole, number> = {
+  super_admin: 4,
+  admin_resources: 3,
+  kepala_unit: 2,
+  user: 1,
+};
+
+export function resolveHighestPriorityRole(roles: Array<string | null | undefined>): AppRole {
+  let best: AppRole = 'user';
+  for (const candidate of roles) {
+    if (!candidate) continue;
+    const normalized = candidate.trim().toLowerCase() as AppRole;
+    if (normalized in ROLE_PRIORITY && ROLE_PRIORITY[normalized] > ROLE_PRIORITY[best]) {
+      best = normalized;
+    }
+  }
+  return best;
+}
+
 export async function verifySupabaseUser(authHeader?: string): Promise<UserProfile> {
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error('Supabase belum dikonfigurasi');
@@ -35,7 +54,7 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     throw err;
   }
 
-  const email = (authData.user.email || '').toLowerCase();
+  const email = (authData.user.email || '').trim().toLowerCase();
   const allowedDomain = getAllowedDomain();
   if (!isLazuardiEmail(email, allowedDomain)) {
     const err = new Error(`Akses ditolak: hanya akun domain @${allowedDomain} yang diizinkan.`);
@@ -43,16 +62,16 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     throw err;
   }
 
-  const userId = authData.user.id;
+  let effectiveUserId = authData.user.id;
   const fullName =
     (authData.user.user_metadata?.full_name as string) ||
     (authData.user.user_metadata?.name as string) ||
     email.split('@')[0];
 
   // Pastikan profil & role ada (auto-provision 'user' untuk pendaftar valid baru)
-  await admin.from('profiles').upsert(
+  const { error: upsertProfileError } = await admin.from('profiles').upsert(
     {
-      id: userId,
+      id: effectiveUserId,
       email,
       full_name: fullName,
       avatar_url: (authData.user.user_metadata?.avatar_url as string) || null,
@@ -61,36 +80,76 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     { onConflict: 'id' }
   );
 
+  if (upsertProfileError) {
+    // Jika terjadi konflik unik pada kolom email (mis. profil lama memiliki UUID berbeda), selesaikan lewat lookup email
+    const { data: existingByEmail } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (existingByEmail?.id) {
+      effectiveUserId = existingByEmail.id as string;
+      await admin
+        .from('profiles')
+        .update({
+          full_name: fullName,
+          avatar_url: (authData.user.user_metadata?.avatar_url as string) || null,
+          last_login_at: new Date().toISOString(),
+        })
+        .eq('id', effectiveUserId);
+    } else {
+      throw new Error(`Gagal menyinkronkan profil pengguna: ${upsertProfileError.message}`);
+    }
+  }
+
   await admin
     .from('user_roles')
-    .upsert({ user_id: userId, role: 'user' }, { onConflict: 'user_id', ignoreDuplicates: true });
+    .upsert({ user_id: effectiveUserId, role: 'user' }, { onConflict: 'user_id', ignoreDuplicates: true });
 
-  // Bootstrap Super Admin awal secara aman di sisi server jika belum ada super_admin di database
+  const { data: initialRoleRows, error: initialRoleError } = await admin
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', effectiveUserId);
+
+  if (initialRoleError) {
+    throw new Error(`Gagal membaca role pengguna: ${initialRoleError.message}`);
+  }
+
+  let resolvedRole = resolveHighestPriorityRole((initialRoleRows || []).map((r) => r.role as string));
+
+  // Bootstrap Super Admin awal secara aman di sisi server jika belum ada super_admin aktif di database
   const bootstrapSuperAdmins = (process.env.BOOTSTRAP_SUPER_ADMIN_EMAILS || 'soleh.st@lazuardi.sch.id')
     .split(',')
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 
-  if (bootstrapSuperAdmins.includes(email)) {
-    const { count: superAdminCount } = await admin
+  if (bootstrapSuperAdmins.includes(email) && resolvedRole !== 'super_admin') {
+    const { count: superAdminCount, error: countErr } = await admin
       .from('user_roles')
       .select('id', { count: 'exact', head: true })
       .eq('role', 'super_admin');
 
-    if ((superAdminCount ?? 0) === 0) {
-      await admin
+    if (!countErr && (superAdminCount ?? 0) === 0) {
+      const { error: promoteErr } = await admin
         .from('user_roles')
         .upsert(
-          { user_id: userId, role: 'super_admin', updated_at: new Date().toISOString() },
+          { user_id: effectiveUserId, role: 'super_admin', updated_at: new Date().toISOString() },
           { onConflict: 'user_id' }
         );
+      if (!promoteErr) {
+        resolvedRole = 'super_admin';
+      }
     }
   }
 
-  const [{ data: profile }, { data: roleRow }, { data: assignments }] = await Promise.all([
-    admin.from('profiles').select('id,email,full_name,avatar_url,is_active,last_login_at').eq('id', userId).single(),
-    admin.from('user_roles').select('role').eq('user_id', userId).single(),
-    admin.from('user_unit_assignments').select('unit_id,is_primary,is_unit_head').eq('user_id', userId),
+  const [{ data: profile }, { data: finalRoleRows }, { data: assignments }] = await Promise.all([
+    admin
+      .from('profiles')
+      .select('id,email,full_name,avatar_url,is_active,last_login_at')
+      .eq('id', effectiveUserId)
+      .maybeSingle(),
+    admin.from('user_roles').select('role').eq('user_id', effectiveUserId),
+    admin.from('user_unit_assignments').select('unit_id,is_primary,is_unit_head').eq('user_id', effectiveUserId),
   ]);
 
   if (profile && !profile.is_active) {
@@ -99,11 +158,17 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     throw err;
   }
 
+  // Prioritaskan role tertinggi dari database ('super_admin' > 'admin_resources' > 'kepala_unit' > 'user')
+  resolvedRole = resolveHighestPriorityRole([
+    resolvedRole,
+    ...(finalRoleRows || []).map((r) => r.role as string),
+  ]);
+
   const unitIds = (assignments || []).map((a) => a.unit_id as string);
   const primaryUnit = (assignments || []).find((a) => a.is_primary)?.unit_id as string | undefined;
   const headUnitIds = (assignments || []).filter((a) => a.is_unit_head).map((a) => a.unit_id as string);
 
-  // Sinkronisasi otomatis Kepala Unit berdasarkan head_email pada tabel units
+  // Sinkronisasi head_unit_ids dari master units (tidak menurunkan role super_admin/admin)
   const { data: headUnitsByEmail } = await admin
     .from('units')
     .select('id')
@@ -120,11 +185,11 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
   }
 
   return {
-    id: userId,
+    id: effectiveUserId,
     email,
     full_name: profile?.full_name || fullName,
     avatar_url: profile?.avatar_url || null,
-    role: ((roleRow?.role as AppRole) || 'user'),
+    role: resolvedRole,
     is_active: profile?.is_active ?? true,
     last_login_at: profile?.last_login_at || new Date().toISOString(),
     unit_ids: unitIds,
@@ -153,7 +218,10 @@ export async function sbGetMasterData(user: UserProfile) {
       admin.from('user_unit_assignments').select('user_id,unit_id,is_primary,is_unit_head'),
     ]);
     const roleMap = new Map<string, AppRole>();
-    for (const r of rolesRes.data || []) roleMap.set(r.user_id as string, r.role as AppRole);
+    for (const r of rolesRes.data || []) {
+      const uid = r.user_id as string;
+      roleMap.set(uid, resolveHighestPriorityRole([roleMap.get(uid), r.role as string]));
+    }
 
     users = (profRes.data || []).map((p) => {
       const uAssign = (assignRes.data || []).filter((a) => a.user_id === p.id);

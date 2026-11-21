@@ -152,6 +152,7 @@ export function createApiRouter(): express.Router {
 
   // 1. Public system status
   router.get('/system/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.json(getSystemModeStatus());
   });
 
@@ -183,6 +184,7 @@ export function createApiRouter(): express.Router {
   });
 
   router.get('/auth/me', requireAuth, (req: AuthedRequest, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({ user: req.lrmsUser });
   });
 

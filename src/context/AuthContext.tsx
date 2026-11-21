@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { apiRequest, getLocalAuthToken, setLocalAuthToken } from '../lib/apiClient.ts';
 import { getSupabaseClient, isFrontendSupabaseReady, signInWithGoogleLazuardi } from '../lib/supabaseClient.ts';
-import type { SystemModeStatus, UserProfile } from '../types/lrms.ts';
+import type { AppRole, SystemModeStatus, UserProfile } from '../types/lrms.ts';
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -15,6 +16,20 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const VALID_ROLES = new Set<AppRole>(['super_admin', 'admin_resources', 'kepala_unit', 'user']);
+
+function normalizeUserProfile(profile: UserProfile): UserProfile {
+  const rawRole = String(profile.role || 'user').trim().toLowerCase() as AppRole;
+  const role: AppRole = VALID_ROLES.has(rawRole) ? rawRole : 'user';
+  return {
+    ...profile,
+    email: profile.email.trim().toLowerCase(),
+    role,
+    unit_ids: Array.isArray(profile.unit_ids) ? profile.unit_ids : [],
+    head_unit_ids: Array.isArray(profile.head_unit_ids) ? profile.head_unit_ids : [],
+  };
+}
 
 function extractOAuthUrlError(): string | null {
   try {
@@ -55,44 +70,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [systemStatus, setSystemStatus] = useState<SystemModeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(() => extractOAuthUrlError());
+  const syncSeqRef = useRef(0);
 
-  const loadSession = useCallback(async () => {
+  const loadSession = useCallback(async (sessionOverride?: Session | null) => {
+    const reqId = ++syncSeqRef.current;
     setLoading(true);
     try {
       const status = await apiRequest<SystemModeStatus>('/system/status');
+      if (reqId !== syncSeqRef.current) return;
       setSystemStatus(status);
 
       if (status.mode === 'supabase' && isFrontendSupabaseReady) {
         const sb = getSupabaseClient();
         if (sb) {
-          const { data } = await sb.auth.getSession();
-          if (data.session) {
+          const activeSession =
+            sessionOverride !== undefined ? sessionOverride : (await sb.auth.getSession()).data.session;
+          if (reqId !== syncSeqRef.current) return;
+
+          if (activeSession?.access_token) {
             setAuthError(null);
-            const me = await apiRequest<{ user: UserProfile }>('/auth/me');
-            setUser(me.user);
+            const me = await apiRequest<{ user: UserProfile }>('/auth/me', {
+              accessToken: activeSession.access_token,
+            });
+            if (reqId !== syncSeqRef.current) return;
+            setUser(normalizeUserProfile(me.user));
             return;
           }
         }
-        setUser(null);
+        if (reqId === syncSeqRef.current) {
+          setUser(null);
+        }
       } else {
         const localToken = getLocalAuthToken();
         if (localToken) {
           try {
             const me = await apiRequest<{ user: UserProfile }>('/auth/me');
-            setUser(me.user);
+            if (reqId !== syncSeqRef.current) return;
+            setUser(normalizeUserProfile(me.user));
           } catch {
+            if (reqId !== syncSeqRef.current) return;
             setLocalAuthToken(null);
             setUser(null);
           }
-        } else {
+        } else if (reqId === syncSeqRef.current) {
           setUser(null);
         }
       }
     } catch (err) {
-      setAuthError((err as Error).message);
-      setUser(null);
+      if (reqId === syncSeqRef.current) {
+        setAuthError((err as Error).message);
+        setUser(null);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === syncSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -101,9 +133,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isFrontendSupabaseReady) {
       const sb = getSupabaseClient();
       if (sb) {
-        const { data: sub } = sb.auth.onAuthStateChange((event) => {
-          if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-            void loadSession();
+        const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+          if (
+            event === 'INITIAL_SESSION' ||
+            event === 'SIGNED_IN' ||
+            event === 'TOKEN_REFRESHED' ||
+            event === 'USER_UPDATED'
+          ) {
+            void loadSession(session);
+          } else if (event === 'SIGNED_OUT') {
+            syncSeqRef.current += 1;
+            setUser(null);
+            setLoading(false);
           }
         });
         return () => sub.subscription.unsubscribe();
@@ -123,7 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: { email },
     });
     setLocalAuthToken(res.token);
-    setUser(res.user);
+    setUser(normalizeUserProfile(res.user));
   }, []);
 
   const signOut = useCallback(async () => {
