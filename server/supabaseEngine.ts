@@ -36,7 +36,53 @@ export function resolveHighestPriorityRole(roles: Array<string | null | undefine
   return best;
 }
 
-export async function verifySupabaseUser(authHeader?: string): Promise<UserProfile> {
+const AUTH_CACHE_TTL_MS = 20_000;
+const MASTER_CACHE_TTL_MS = 15_000;
+const LAST_LOGIN_TOUCH_INTERVAL_MS = 15 * 60_000;
+
+interface CachedVerifiedUser {
+  user: UserProfile;
+  expiresAt: number;
+}
+
+const verifiedUserCache = new Map<string, CachedVerifiedUser>();
+const inFlightAuthMap = new Map<string, Promise<UserProfile>>();
+
+interface CachedMasterEntry {
+  data: Awaited<ReturnType<typeof fetchMasterDataUncached>>;
+  expiresAt: number;
+}
+
+const masterDataCache = new Map<'admin' | 'standard', CachedMasterEntry>();
+const inFlightMasterMap = new Map<'admin' | 'standard', Promise<Awaited<ReturnType<typeof fetchMasterDataUncached>>>>();
+
+export function invalidateSupabaseAuthCache(): void {
+  verifiedUserCache.clear();
+}
+
+export function invalidateMasterDataCache(): void {
+  masterDataCache.clear();
+}
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getJwtExpMs(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { exp?: number };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function verifySupabaseUser(
+  authHeader?: string,
+  options?: { forceRefresh?: boolean }
+): Promise<UserProfile> {
   assertValidServiceRoleKey();
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error('Supabase belum dikonfigurasi');
@@ -48,8 +94,48 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     throw err;
   }
 
+  const tokenKey = hashToken(token);
+  const now = Date.now();
+  const jwtExpMs = getJwtExpMs(token);
+
+  if (jwtExpMs !== null && jwtExpMs <= now) {
+    verifiedUserCache.delete(tokenKey);
+    const err = new Error('Token autentikasi tidak valid atau telah kedaluwarsa.');
+    (err as Error & { status?: number }).status = 401;
+    throw err;
+  }
+
+  if (!options?.forceRefresh) {
+    const cached = verifiedUserCache.get(tokenKey);
+    if (cached && cached.expiresAt > now && (jwtExpMs === null || jwtExpMs > now)) {
+      return cached.user;
+    }
+
+    const existingPromise = inFlightAuthMap.get(tokenKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
+  }
+
+  const promise = verifySupabaseUserUncached(token, tokenKey, jwtExpMs).finally(() => {
+    inFlightAuthMap.delete(tokenKey);
+  });
+
+  if (!options?.forceRefresh) {
+    inFlightAuthMap.set(tokenKey, promise);
+  }
+  return promise;
+}
+
+async function verifySupabaseUserUncached(
+  token: string,
+  tokenKey: string,
+  jwtExpMs: number | null
+): Promise<UserProfile> {
+  const admin = getSupabaseAdmin()!;
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) {
+    verifiedUserCache.delete(tokenKey);
     const err = new Error('Token autentikasi tidak valid atau telah kedaluwarsa.');
     (err as Error & { status?: number }).status = 401;
     throw err;
@@ -68,60 +154,126 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     (authData.user.user_metadata?.full_name as string) ||
     (authData.user.user_metadata?.name as string) ||
     email.split('@')[0];
+  const avatarUrl = (authData.user.user_metadata?.avatar_url as string) || null;
 
-  // Pastikan profil & role ada (auto-provision 'user' untuk pendaftar valid baru)
-  const { error: upsertProfileError } = await admin.from('profiles').upsert(
-    {
-      id: effectiveUserId,
-      email,
-      full_name: fullName,
-      avatar_url: (authData.user.user_metadata?.avatar_url as string) || null,
-      last_login_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' }
-  );
+  // 1 roundtrip paralel: baca profil + role + assignment + unit yang dikepalai sekaligus
+  const [profByIdRes, rolesByIdRes, assignByIdRes, headUnitsRes] = await Promise.all([
+    admin
+      .from('profiles')
+      .select('id,email,full_name,avatar_url,is_active,last_login_at')
+      .eq('id', effectiveUserId)
+      .maybeSingle(),
+    admin.from('user_roles').select('role').eq('user_id', effectiveUserId),
+    admin.from('user_unit_assignments').select('unit_id,is_primary,is_unit_head').eq('user_id', effectiveUserId),
+    admin.from('units').select('id').eq('head_email', email).eq('is_active', true),
+  ]);
 
-  if (upsertProfileError) {
-    if (upsertProfileError.code === '42501' || upsertProfileError.message.toLowerCase().includes('permission denied')) {
+  if (profByIdRes.error) {
+    if (
+      profByIdRes.error.code === '42501' ||
+      profByIdRes.error.message.toLowerCase().includes('permission denied')
+    ) {
       throw new Error(
         'Permission denied pada tabel profiles: pastikan SUPABASE_SERVICE_ROLE_KEY menggunakan secret key service_role (bukan anon/publishable) dan jalankan GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role di Supabase SQL Editor.'
       );
     }
-    // Jika terjadi konflik unik pada kolom email (mis. profil lama memiliki UUID berbeda), selesaikan lewat lookup email
-    const { data: existingByEmail } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-    if (existingByEmail?.id) {
+    throw new Error(`Gagal menyinkronkan profil pengguna: ${profByIdRes.error.message}`);
+  }
+
+  let profile = profByIdRes.data;
+  let roleRows = rolesByIdRes.data || [];
+  let assignments = assignByIdRes.data || [];
+
+  if (!profile) {
+    const { error: upsertProfileError } = await admin.from('profiles').upsert(
+      {
+        id: effectiveUserId,
+        email,
+        full_name: fullName,
+        avatar_url: avatarUrl,
+        last_login_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+
+    if (upsertProfileError) {
+      if (
+        upsertProfileError.code === '42501' ||
+        upsertProfileError.message.toLowerCase().includes('permission denied')
+      ) {
+        throw new Error(
+          'Permission denied pada tabel profiles: pastikan SUPABASE_SERVICE_ROLE_KEY menggunakan secret key service_role (bukan anon/publishable) dan jalankan GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role di Supabase SQL Editor.'
+        );
+      }
+
+      // Tangani konflik unik kolom email bila profil lama memakai UUID berbeda
+      const { data: existingByEmail } = await admin
+        .from('profiles')
+        .select('id,email,full_name,avatar_url,is_active,last_login_at')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (!existingByEmail?.id) {
+        throw new Error(`Gagal menyinkronkan profil pengguna: ${upsertProfileError.message}`);
+      }
+
       effectiveUserId = existingByEmail.id as string;
-      await admin
+      profile = existingByEmail;
+      const [altRolesRes, altAssignRes] = await Promise.all([
+        admin.from('user_roles').select('role').eq('user_id', effectiveUserId),
+        admin.from('user_unit_assignments').select('unit_id,is_primary,is_unit_head').eq('user_id', effectiveUserId),
+      ]);
+      roleRows = altRolesRes.data || [];
+      assignments = altAssignRes.data || [];
+    } else {
+      profile = {
+        id: effectiveUserId,
+        email,
+        full_name: fullName,
+        avatar_url: avatarUrl,
+        is_active: true,
+        last_login_at: new Date().toISOString(),
+      };
+    }
+  } else {
+    // Hanya update last_login_at jika sudah lewat >15 menit atau nama/avatar berubah (hindari write pada tiap GET)
+    const lastLoginMs = profile.last_login_at ? Date.parse(profile.last_login_at as string) : 0;
+    const shouldTouchProfile =
+      !lastLoginMs ||
+      Date.now() - lastLoginMs > LAST_LOGIN_TOUCH_INTERVAL_MS ||
+      profile.full_name !== fullName ||
+      profile.avatar_url !== avatarUrl;
+
+    if (shouldTouchProfile) {
+      void admin
         .from('profiles')
         .update({
           full_name: fullName,
-          avatar_url: (authData.user.user_metadata?.avatar_url as string) || null,
+          avatar_url: avatarUrl,
           last_login_at: new Date().toISOString(),
         })
         .eq('id', effectiveUserId);
-    } else {
-      throw new Error(`Gagal menyinkronkan profil pengguna: ${upsertProfileError.message}`);
     }
   }
 
-  await admin
-    .from('user_roles')
-    .upsert({ user_id: effectiveUserId, role: 'user' }, { onConflict: 'user_id', ignoreDuplicates: true });
-
-  const { data: initialRoleRows, error: initialRoleError } = await admin
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', effectiveUserId);
-
-  if (initialRoleError) {
-    throw new Error(`Gagal membaca role pengguna: ${initialRoleError.message}`);
+  if (profile && !profile.is_active) {
+    const err = new Error('Akun Anda dinonaktifkan. Hubungi Super Admin Divisi Resources.');
+    (err as Error & { status?: number }).status = 403;
+    throw err;
   }
 
-  let resolvedRole = resolveHighestPriorityRole((initialRoleRows || []).map((r) => r.role as string));
+  if (rolesByIdRes.error && roleRows.length === 0) {
+    throw new Error(`Gagal membaca role pengguna: ${rolesByIdRes.error.message}`);
+  }
+
+  if (roleRows.length === 0) {
+    await admin
+      .from('user_roles')
+      .upsert({ user_id: effectiveUserId, role: 'user' }, { onConflict: 'user_id', ignoreDuplicates: true });
+    roleRows = [{ role: 'user' }];
+  }
+
+  let resolvedRole = resolveHighestPriorityRole(roleRows.map((r) => r.role as string));
 
   // Bootstrap Super Admin awal secara aman di sisi server jika belum ada super_admin aktif di database
   const bootstrapSuperAdmins = (process.env.BOOTSTRAP_SUPER_ADMIN_EMAILS || 'soleh.st@lazuardi.sch.id')
@@ -148,40 +300,11 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     }
   }
 
-  const [{ data: profile }, { data: finalRoleRows }, { data: assignments }] = await Promise.all([
-    admin
-      .from('profiles')
-      .select('id,email,full_name,avatar_url,is_active,last_login_at')
-      .eq('id', effectiveUserId)
-      .maybeSingle(),
-    admin.from('user_roles').select('role').eq('user_id', effectiveUserId),
-    admin.from('user_unit_assignments').select('unit_id,is_primary,is_unit_head').eq('user_id', effectiveUserId),
-  ]);
+  const unitIds = assignments.map((a) => a.unit_id as string);
+  const primaryUnit = assignments.find((a) => a.is_primary)?.unit_id as string | undefined;
+  const headUnitIds = assignments.filter((a) => a.is_unit_head).map((a) => a.unit_id as string);
 
-  if (profile && !profile.is_active) {
-    const err = new Error('Akun Anda dinonaktifkan. Hubungi Super Admin Divisi Resources.');
-    (err as Error & { status?: number }).status = 403;
-    throw err;
-  }
-
-  // Prioritaskan role tertinggi dari database ('super_admin' > 'admin_resources' > 'kepala_unit' > 'user')
-  resolvedRole = resolveHighestPriorityRole([
-    resolvedRole,
-    ...(finalRoleRows || []).map((r) => r.role as string),
-  ]);
-
-  const unitIds = (assignments || []).map((a) => a.unit_id as string);
-  const primaryUnit = (assignments || []).find((a) => a.is_primary)?.unit_id as string | undefined;
-  const headUnitIds = (assignments || []).filter((a) => a.is_unit_head).map((a) => a.unit_id as string);
-
-  // Sinkronisasi head_unit_ids dari master units (tidak menurunkan role super_admin/admin)
-  const { data: headUnitsByEmail } = await admin
-    .from('units')
-    .select('id')
-    .eq('head_email', email)
-    .eq('is_active', true);
-
-  for (const hu of headUnitsByEmail || []) {
+  for (const hu of headUnitsRes.data || []) {
     if (!headUnitIds.includes(hu.id as string)) {
       headUnitIds.push(hu.id as string);
     }
@@ -190,23 +313,59 @@ export async function verifySupabaseUser(authHeader?: string): Promise<UserProfi
     }
   }
 
-  return {
+  const resolvedUser: UserProfile = {
     id: effectiveUserId,
     email,
-    full_name: profile?.full_name || fullName,
-    avatar_url: profile?.avatar_url || null,
+    full_name: (profile?.full_name as string) || fullName,
+    avatar_url: (profile?.avatar_url as string | null) || avatarUrl,
     role: resolvedRole,
     is_active: profile?.is_active ?? true,
-    last_login_at: profile?.last_login_at || new Date().toISOString(),
+    last_login_at: (profile?.last_login_at as string) || new Date().toISOString(),
     unit_ids: unitIds,
     primary_unit_id: primaryUnit || unitIds[0] || null,
     head_unit_ids: headUnitIds,
   };
+
+  if (verifiedUserCache.size > 500) {
+    verifiedUserCache.clear();
+  }
+  const cacheTtlEnd = Date.now() + AUTH_CACHE_TTL_MS;
+  verifiedUserCache.set(tokenKey, {
+    user: resolvedUser,
+    expiresAt: jwtExpMs ? Math.min(cacheTtlEnd, jwtExpMs) : cacheTtlEnd,
+  });
+
+  return resolvedUser;
 }
 
 export async function sbGetMasterData(user: UserProfile) {
-  const admin = getSupabaseAdmin()!;
   const isAdmin = user.role === 'super_admin' || user.role === 'admin_resources';
+  const cacheKey: 'admin' | 'standard' = isAdmin ? 'admin' : 'standard';
+  const now = Date.now();
+  const cached = masterDataCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  const inFlight = inFlightMasterMap.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const promise = fetchMasterDataUncached(isAdmin)
+    .then((data) => {
+      masterDataCache.set(cacheKey, { data, expiresAt: Date.now() + MASTER_CACHE_TTL_MS });
+      return data;
+    })
+    .finally(() => {
+      inFlightMasterMap.delete(cacheKey);
+    });
+  inFlightMasterMap.set(cacheKey, promise);
+  return promise;
+}
+
+async function fetchMasterDataUncached(isAdmin: boolean) {
+  const admin = getSupabaseAdmin()!;
 
   const [unitsRes, servicesRes, locationsRes, invLocRes, settingsRes] = await Promise.all([
     admin.from('units').select('id,code,name,category,head_name,head_email,is_active').order('name'),

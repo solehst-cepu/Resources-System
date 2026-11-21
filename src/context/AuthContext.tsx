@@ -1,6 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { apiRequest, getLocalAuthToken, setLocalAuthToken } from '../lib/apiClient.ts';
+import {
+  apiRequest,
+  getLocalAuthToken,
+  invalidateClientMasterCache,
+  setCachedSupabaseAccessToken,
+  setLocalAuthToken,
+} from '../lib/apiClient.ts';
 import { getSupabaseClient, isFrontendSupabaseReady, signInWithGoogleLazuardi } from '../lib/supabaseClient.ts';
 import type { AppRole, SystemModeStatus, UserProfile } from '../types/lrms.ts';
 
@@ -71,36 +77,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(() => extractOAuthUrlError());
   const syncSeqRef = useRef(0);
+  const systemStatusRef = useRef<SystemModeStatus | null>(null);
 
-  const loadSession = useCallback(async (sessionOverride?: Session | null) => {
+  const loadSession = useCallback(async (sessionOverride?: Session | null, forceStatusRefresh = false) => {
     const reqId = ++syncSeqRef.current;
     setLoading(true);
     try {
-      const status = await apiRequest<SystemModeStatus>('/system/status');
+      const sb = isFrontendSupabaseReady ? getSupabaseClient() : null;
+      const needStatus = forceStatusRefresh || !systemStatusRef.current;
+
+      const [status, sessionResult] = await Promise.all([
+        needStatus
+          ? apiRequest<SystemModeStatus>('/system/status')
+          : Promise.resolve(systemStatusRef.current!),
+        sessionOverride !== undefined
+          ? Promise.resolve({ data: { session: sessionOverride } })
+          : sb
+            ? sb.auth.getSession()
+            : Promise.resolve({ data: { session: null } }),
+      ]);
+
       if (reqId !== syncSeqRef.current) return;
+      systemStatusRef.current = status;
       setSystemStatus(status);
 
       if (status.mode === 'supabase' && isFrontendSupabaseReady) {
-        const sb = getSupabaseClient();
-        if (sb) {
-          const activeSession =
-            sessionOverride !== undefined ? sessionOverride : (await sb.auth.getSession()).data.session;
-          if (reqId !== syncSeqRef.current) return;
+        const activeSession = sessionResult.data.session;
+        setCachedSupabaseAccessToken(activeSession?.access_token || null);
 
-          if (activeSession?.access_token) {
-            setAuthError(null);
-            const me = await apiRequest<{ user: UserProfile }>('/auth/me', {
-              accessToken: activeSession.access_token,
-            });
-            if (reqId !== syncSeqRef.current) return;
-            setUser(normalizeUserProfile(me.user));
-            return;
-          }
+        if (activeSession?.access_token) {
+          setAuthError(null);
+          const me = await apiRequest<{ user: UserProfile }>('/auth/me', {
+            accessToken: activeSession.access_token,
+          });
+          if (reqId !== syncSeqRef.current) return;
+          setUser(normalizeUserProfile(me.user));
+          return;
         }
         if (reqId === syncSeqRef.current) {
           setUser(null);
         }
       } else {
+        setCachedSupabaseAccessToken(null);
         const localToken = getLocalAuthToken();
         if (localToken) {
           try {
@@ -129,27 +147,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void loadSession();
+    let initialDone = false;
     if (isFrontendSupabaseReady) {
       const sb = getSupabaseClient();
       if (sb) {
         const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
-          if (
-            event === 'INITIAL_SESSION' ||
+          if (event === 'INITIAL_SESSION') {
+            initialDone = true;
+            void loadSession(session);
+          } else if (
             event === 'SIGNED_IN' ||
             event === 'TOKEN_REFRESHED' ||
             event === 'USER_UPDATED'
           ) {
+            initialDone = true;
+            setCachedSupabaseAccessToken(session?.access_token || null);
             void loadSession(session);
           } else if (event === 'SIGNED_OUT') {
+            initialDone = true;
             syncSeqRef.current += 1;
+            setCachedSupabaseAccessToken(null);
+            invalidateClientMasterCache();
             setUser(null);
             setLoading(false);
           }
         });
-        return () => sub.subscription.unsubscribe();
+        // Fallback jika event INITIAL_SESSION belum terpicu cepat
+        const fallbackTimer = window.setTimeout(() => {
+          if (!initialDone) {
+            void loadSession();
+          }
+        }, 120);
+        return () => {
+          window.clearTimeout(fallbackTimer);
+          sub.subscription.unsubscribe();
+        };
       }
     }
+    void loadSession();
   }, [loadSession]);
 
   const signInGoogle = useCallback(async () => {

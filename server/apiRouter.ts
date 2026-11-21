@@ -22,6 +22,8 @@ import {
   withLocalLock,
 } from './localStore.js';
 import {
+  invalidateMasterDataCache,
+  invalidateSupabaseAuthCache,
   mapSupabaseOrderRow,
   sbCreateOrder,
   sbGetAttachmentSignedUrl,
@@ -58,7 +60,8 @@ const ALLOWED_MIME_TYPES = new Set([
 
 async function resolveRequestUser(req: AuthedRequest): Promise<UserProfile> {
   if (isSupabaseConfigured()) {
-    return verifySupabaseUser(req.headers.authorization);
+    const forceRefresh = req.path === '/auth/me' || req.path === '/auth/session';
+    return verifySupabaseUser(req.headers.authorization, { forceRefresh });
   }
 
   // Local Mode: verifikasi header x-lrms-user-email atau Bearer local token
@@ -160,7 +163,7 @@ export function createApiRouter(): express.Router {
   router.post('/auth/session', async (req: AuthedRequest, res) => {
     try {
       if (isSupabaseConfigured()) {
-        const user = await verifySupabaseUser(req.headers.authorization);
+        const user = await verifySupabaseUser(req.headers.authorization, { forceRefresh: true });
         res.json({ user });
         return;
       }
@@ -224,7 +227,19 @@ export function createApiRouter(): express.Router {
     res.send(buf);
   });
 
-  // 4. Master Data
+  // 4. Master Data (otomatis invalidasi cache saat ada mutasi data master/role)
+  router.use('/master', (req, res, next) => {
+    if (req.method !== 'GET') {
+      res.on('finish', () => {
+        if (res.statusCode < 400) {
+          invalidateMasterDataCache();
+          invalidateSupabaseAuthCache();
+        }
+      });
+    }
+    next();
+  });
+
   router.get('/master', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const user = req.lrmsUser!;
