@@ -31,14 +31,39 @@ export function getSupabaseClient(): SupabaseClient | null {
   return client;
 }
 
-export async function signInWithGoogleLazuardi(): Promise<void> {
+export async function signInWithGoogleLazuardi(): Promise<{ externalTabUrl?: string }> {
   const sb = getSupabaseClient();
-  if (!sb) {
+  if (!sb || !supabaseUrl || !supabaseAnonKey) {
     throw new Error('Supabase belum dikonfigurasi pada environment frontend.');
   }
-  const { error } = await sb.auth.signInWithOAuth({
+
+  try {
+    const settingsRes = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+      headers: { apikey: supabaseAnonKey },
+    });
+    if (settingsRes.ok) {
+      const settings = (await settingsRes.json()) as {
+        external?: Record<string, boolean>;
+      };
+      if (settings.external && settings.external.google === false) {
+        throw new Error(
+          'Provider Google OAuth belum diaktifkan di Supabase Dashboard (Authentication → Providers → Google). Aktifkan Google Sign-In terlebih dahulu dan tambahkan URL aplikasi ke Redirect URLs.'
+        );
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('Google OAuth belum diaktifkan')) {
+      throw err;
+    }
+    // Abaikan error jaringan pre-check dan lanjutkan flow OAuth normal
+  }
+
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+
+  const { data, error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {
+      skipBrowserRedirect: isInIframe,
       queryParams: {
         hd: 'lazuardi.sch.id',
         prompt: 'select_account',
@@ -49,4 +74,9 @@ export async function signInWithGoogleLazuardi(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+
+  if (isInIframe && data?.url) {
+    return { externalTabUrl: data.url };
+  }
+  return {};
 }

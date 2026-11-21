@@ -38,7 +38,7 @@ export function isSmtpConfigured(): boolean {
 }
 
 export function getAllowedDomain(): string {
-  return (process.env.ALLOWED_EMAIL_DOMAIN || 'lazuardi.sch.id').toLowerCase();
+  return (process.env.ALLOWED_EMAIL_DOMAIN || 'lazuardi.sch.id').trim().replace(/^@+/, '').toLowerCase();
 }
 
 export function getSystemModeStatus(): SystemModeStatus {

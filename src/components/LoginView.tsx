@@ -14,6 +14,7 @@ export function LoginView() {
   const [emailInput, setEmailInput] = useState('soleh.st@lazuardi.sch.id');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [externalOAuthUrl, setExternalOAuthUrl] = useState<string | null>(null);
 
   const isSupabaseMode = systemStatus?.mode === 'supabase';
   const allowedDomain = systemStatus?.allowedDomain || 'lazuardi.sch.id';
@@ -21,8 +22,13 @@ export function LoginView() {
   const handleGoogleLogin = async () => {
     setSubmitting(true);
     setLocalError(null);
+    setExternalOAuthUrl(null);
     try {
-      await signInGoogle();
+      const res = await signInGoogle();
+      if (res?.externalTabUrl) {
+        setExternalOAuthUrl(res.externalTabUrl);
+        setSubmitting(false);
+      }
     } catch (err) {
       setLocalError((err as Error).message);
       setSubmitting(false);
@@ -106,6 +112,23 @@ export function LoginView() {
                 <span>{submitting ? 'Mengalihkan ke Google SSO...' : 'Masuk dengan Google (@lazuardi.sch.id)'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+              {externalOAuthUrl && (
+                <div className="p-3.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-slate-700 space-y-2.5">
+                  <p>
+                    Login Google diblokir jika dijalankan di dalam frame preview (403). Klik tombol di bawah untuk
+                    membuka login Google di tab browser baru:
+                  </p>
+                  <a
+                    href={externalOAuthUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#1755CE] hover:bg-[#1244a8] text-white font-semibold text-xs transition-colors"
+                  >
+                    <span>Lanjutkan Login Google di Tab Baru</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
               <p className="text-xs text-slate-500">
                 Email di luar domain @{allowedDomain} akan otomatis ditolak oleh validasi server dan database Supabase.
               </p>

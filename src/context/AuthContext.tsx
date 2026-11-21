@@ -8,7 +8,7 @@ interface AuthContextValue {
   systemStatus: SystemModeStatus | null;
   loading: boolean;
   authError: string | null;
-  signInGoogle: () => Promise<void>;
+  signInGoogle: () => Promise<{ externalTabUrl?: string }>;
   signInLocalEmail: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -16,15 +16,48 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function extractOAuthUrlError(): string | null {
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashRaw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    const hashParams = new URLSearchParams(hashRaw);
+    const rawDesc =
+      searchParams.get('error_description') ||
+      hashParams.get('error_description') ||
+      searchParams.get('error') ||
+      hashParams.get('error');
+
+    if (!rawDesc) return null;
+
+    const cleanUrl = `${window.location.pathname}`;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    if (rawDesc.includes('provider is not enabled')) {
+      return 'Provider Google OAuth belum diaktifkan di Supabase Dashboard (Authentication → Providers → Google).';
+    }
+    if (rawDesc.includes('org_internal')) {
+      return 'Akses Google OAuth ditolak (403 org_internal): pastikan Anda masuk menggunakan akun Google Workspace @lazuardi.sch.id, bukan akun Gmail pribadi.';
+    }
+    if (rawDesc.includes('access_denied')) {
+      return 'Akses Google OAuth ditolak (403 access_denied): periksa Google Cloud Console → OAuth Consent Screen (pastikan status Published atau email Anda terdaftar di Test Users).';
+    }
+    if (rawDesc.includes('lazuardi.sch.id') || rawDesc.includes('Database error saving new user')) {
+      return 'Akses ditolak: hanya akun Google Workspace @lazuardi.sch.id yang diizinkan masuk ke LRMS.';
+    }
+    return rawDesc;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [systemStatus, setSystemStatus] = useState<SystemModeStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(() => extractOAuthUrlError());
 
   const loadSession = useCallback(async () => {
     setLoading(true);
-    setAuthError(null);
     try {
       const status = await apiRequest<SystemModeStatus>('/system/status');
       setSystemStatus(status);
@@ -34,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (sb) {
           const { data } = await sb.auth.getSession();
           if (data.session) {
+            setAuthError(null);
             const me = await apiRequest<{ user: UserProfile }>('/auth/me');
             setUser(me.user);
             return;
@@ -79,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInGoogle = useCallback(async () => {
     setAuthError(null);
-    await signInWithGoogleLazuardi();
+    return signInWithGoogleLazuardi();
   }, []);
 
   const signInLocalEmail = useCallback(async (email: string) => {

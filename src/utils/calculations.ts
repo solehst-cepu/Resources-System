@@ -73,8 +73,9 @@ export function formatBytes(bytes?: number | null): string {
 
 export function isLazuardiEmail(email: string, allowedDomain = 'lazuardi.sch.id'): boolean {
   const normalized = email.trim().toLowerCase();
-  const suffix = `@${allowedDomain.toLowerCase()}`;
-  return normalized.endsWith(suffix) && normalized.length > suffix.length && !normalized.includes(' ');
+  const cleanDomain = allowedDomain.trim().replace(/^@+/, '').toLowerCase();
+  const suffix = `@${cleanDomain}`;
+  return Boolean(cleanDomain) && normalized.endsWith(suffix) && normalized.length > suffix.length && !normalized.includes(' ');
 }
 
 export function getServiceLabel(serviceType: string): string {
