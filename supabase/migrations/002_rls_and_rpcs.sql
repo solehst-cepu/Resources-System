@@ -225,6 +225,12 @@ CREATE POLICY orders_update ON public.orders
     )
   );
 
+DROP POLICY IF EXISTS orders_delete_admin ON public.orders;
+CREATE POLICY orders_delete_admin ON public.orders
+  FOR DELETE USING (
+    is_admin_or_super()
+  );
+
 DROP POLICY IF EXISTS order_items_select ON public.order_items;
 CREATE POLICY order_items_select ON public.order_items
   FOR SELECT USING (

@@ -729,6 +729,16 @@ export function readPrivateLocalUpload(storagePath: string): Buffer | null {
   return fs.readFileSync(fullPath);
 }
 
+export function deletePrivateLocalUpload(storagePath: string): void {
+  const safeBasename = path.basename(storagePath);
+  const baseDir = path.resolve(UPLOAD_DIR);
+  const resolvedPath = path.resolve(baseDir, safeBasename);
+  if (!resolvedPath.startsWith(baseDir + path.sep)) return;
+  if (fs.existsSync(resolvedPath)) {
+    fs.unlinkSync(resolvedPath);
+  }
+}
+
 // Signed URL Token untuk akses file privat berumur pendek (60 detik)
 function getSigningSecret(): string {
   return process.env.SIGNED_URL_SECRET || 'lrms-local-ephemeral-signing-key-2026';

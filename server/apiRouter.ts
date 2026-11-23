@@ -11,6 +11,7 @@ import {
   appendAudit,
   computeStockBalanceUpdate,
   createSignedFileToken,
+  deletePrivateLocalUpload,
   getServicePrefix,
   getStockBalanceValue,
   loadLocalDb,
@@ -1545,6 +1546,139 @@ export function createApiRouter(): express.Router {
       res.status(400).json({ error: (err as Error).message });
     }
   });
+
+  // Delete order permanently (Hanya Super Admin & Admin Resources)
+  router.delete(
+    '/orders/:id',
+    requireAuth,
+    requireRoles('super_admin', 'admin_resources'),
+    async (req: AuthedRequest, res) => {
+      try {
+        const user = req.lrmsUser!;
+        const { id } = req.params;
+        const rawReason = typeof req.body?.reason === 'string'
+          ? req.body.reason
+          : typeof req.query.reason === 'string'
+          ? req.query.reason
+          : '';
+        const reason = rawReason.trim().slice(0, 300) || null;
+
+        if (!id || typeof id !== 'string') {
+          res.status(400).json({ error: 'ID order tidak valid.' });
+          return;
+        }
+
+        if (isSupabaseConfigured()) {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(id)) {
+            res.status(400).json({ error: 'Format ID order tidak valid.' });
+            return;
+          }
+
+          const admin = getSupabaseAdmin()!;
+          const { data: existing, error: fetchErr } = await admin
+            .from('orders')
+            .select(
+              'id,order_number,service_type,status,requester_id,requester_name,requester_email,unit_id,order_attachments(storage_bucket,storage_path)'
+            )
+            .eq('id', id)
+            .maybeSingle();
+
+          if (fetchErr) {
+            throw new Error(fetchErr.message);
+          }
+          if (!existing) {
+            res.status(404).json({ error: 'Order tidak ditemukan.' });
+            return;
+          }
+
+          await admin.from('notifications').delete().eq('related_order_id', id);
+
+          const { error: deleteErr } = await admin.from('orders').delete().eq('id', id);
+          if (deleteErr) {
+            throw new Error(deleteErr.message);
+          }
+
+          const attachments =
+            (existing.order_attachments as Array<{ storage_bucket?: string; storage_path?: string }>) || [];
+          const byBucket = new Map<string, string[]>();
+          for (const att of attachments) {
+            if (!att.storage_path) continue;
+            const bucket = att.storage_bucket || 'order-documents';
+            const list = byBucket.get(bucket) || [];
+            list.push(att.storage_path);
+            byBucket.set(bucket, list);
+          }
+          for (const [bucket, paths] of byBucket.entries()) {
+            if (paths.length > 0) {
+              await admin.storage.from(bucket).remove(paths).catch(() => undefined);
+            }
+          }
+
+          await admin
+            .from('audit_logs')
+            .insert({
+              actor_id: user.id,
+              actor_email: user.email,
+              actor_role: user.role,
+              action: 'DELETE_ORDER',
+              entity_type: 'order',
+              entity_id: id,
+              details: {
+                order_number: existing.order_number,
+                service_type: existing.service_type,
+                status: existing.status,
+                requester_name: existing.requester_name,
+                requester_email: existing.requester_email,
+                reason,
+              },
+            })
+            .then(
+              () => undefined,
+              () => undefined
+            );
+
+          res.json({ success: true, deletedOrderNumber: existing.order_number });
+          return;
+        }
+
+        const removed = await withLocalLock(async () => {
+          const db = loadLocalDb();
+          const idx = db.orders.findIndex((o) => o.id === id);
+          if (idx === -1) {
+            const err = new Error('Order tidak ditemukan.');
+            (err as Error & { status?: number }).status = 404;
+            throw err;
+          }
+
+          const [target] = db.orders.splice(idx, 1);
+          db.notifications = db.notifications.filter((n) => n.related_order_id !== id);
+          appendAudit(db, user, 'DELETE_ORDER', 'order', target.id, {
+            order_number: target.order_number,
+            service_type: target.service_type,
+            status: target.status,
+            requester_name: target.requester_name,
+            requester_email: target.requester_email,
+            reason,
+          });
+          saveLocalDb(db);
+
+          for (const att of target.attachments || []) {
+            if (att.storage_path) {
+              deletePrivateLocalUpload(att.storage_path);
+            }
+          }
+
+          return target;
+        });
+
+        res.json({ success: true, deletedOrderNumber: removed.order_number });
+      } catch (err) {
+        const e = err as Error & { status?: number };
+        res.status(e.status || 400).json({ error: e.message });
+      }
+    }
+  );
 
   // 7. Atomic Gallon Delivery & Empty Return Completion
   router.post(
