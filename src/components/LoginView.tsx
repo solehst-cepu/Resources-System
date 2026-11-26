@@ -59,16 +59,16 @@ export function LoginView() {
                 <Building2 className="w-5 h-5 text-white" />
               </div>
               <div>
-                <div className="text-sm font-semibold tracking-tight">LRMS Portal</div>
+                <div className="text-sm font-semibold tracking-tight">RESERVE Portal</div>
                 <div className="text-xs text-blue-100">Divisi Resources Lazuardi</div>
               </div>
             </div>
 
             <h1 className="mt-8 text-2xl font-bold tracking-tight leading-snug text-balance">
-              Lazuardi Resources Management System
+              RESERVE - RESource &amp; SERVice Excellence
             </h1>
             <p className="mt-3 text-sm text-blue-100 leading-relaxed">
-              One Portal, All Resources Services. Pengelolaan terpadu permintaan Air Galon,
+              Portal Layanan Terpadu Divisi Resources Lazuardi. Pengelolaan permintaan Air Galon,
               Fotokopi, Laminating, persediaan gudang, dan pelaporan operasional sekolah.
             </p>
           </div>

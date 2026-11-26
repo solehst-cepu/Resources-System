@@ -195,7 +195,7 @@ export function ReportsAnalyticsView() {
     };
   });
 
-  const activeTitle = REPORT_MENU.find((m) => m.key === reportType)?.label || 'Laporan LRMS';
+  const activeTitle = REPORT_MENU.find((m) => m.key === reportType)?.label || 'Laporan RESERVE';
   const selectedUnitLabel =
     unitId === 'all' ? 'Semua Unit' : units.find((u) => u.id === unitId)?.name || 'Unit Terpilih';
   const activePeriodText =

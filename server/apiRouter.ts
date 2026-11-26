@@ -173,7 +173,7 @@ export function createApiRouter(): express.Router {
       const allowedDomain = getAllowedDomain();
       if (!isLazuardiEmail(email, allowedDomain)) {
         res.status(403).json({
-          error: `Login ditolak oleh server: hanya email Google Workspace @${allowedDomain} yang diizinkan masuk ke LRMS.`,
+          error: `Login ditolak oleh server: hanya email Google Workspace @${allowedDomain} yang diizinkan masuk ke RESERVE.`,
         });
         return;
       }

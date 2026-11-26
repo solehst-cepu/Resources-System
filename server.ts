@@ -44,7 +44,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`LRMS server berjalan di http://localhost:${PORT}`);
+    console.log(`RESERVE server berjalan di http://localhost:${PORT}`);
   });
 }
 

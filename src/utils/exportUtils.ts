@@ -142,11 +142,11 @@ function createPDFDocument<T>(
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('LAZUARDI RESOURCES MANAGEMENT SYSTEM', 14, 10);
+  doc.text('RESERVE - RESource & SERVice Excellence', 14, 10);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text('Divisi Resources Lazuardi — One Portal, All Resources Services', 14, 16);
+  doc.text('Divisi Resources Lazuardi — Portal Layanan Operasional Sekolah', 14, 16);
 
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(12);
@@ -260,7 +260,7 @@ function createPDFDocument<T>(
     doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
     doc.text(
-      `Dicetak dari LRMS pada ${new Date().toLocaleString('id-ID')} — Halaman ${i} dari ${finalPageCount}`,
+      `Dicetak dari RESERVE pada ${new Date().toLocaleString('id-ID')} — Halaman ${i} dari ${finalPageCount}`,
       14,
       pageHeight - 8
     );

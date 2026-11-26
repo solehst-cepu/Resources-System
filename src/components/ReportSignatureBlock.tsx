@@ -18,10 +18,10 @@ export function PrintReportHeader({ title, subtitle, authorization }: PrintRepor
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-bold text-[#1755CE] tracking-tight">
-            LAZUARDI RESOURCES MANAGEMENT SYSTEM (LRMS)
+            RESERVE - RESource &amp; SERVice Excellence
           </div>
           <div className="text-[11px] text-slate-500">
-            Divisi Resources Lazuardi — One Portal, All Resources Services
+            Divisi Resources Lazuardi — Portal Layanan Operasional Sekolah
           </div>
           <h1 className="mt-2 text-base font-bold text-slate-900">{title}</h1>
           <p className="text-xs text-slate-600">{subtitle}</p>
@@ -191,7 +191,7 @@ export function ReportSignatureBlock({
                 <span>Otorisasi &amp; Validasi Pelaporan Admin</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                Laporan ini disusun, diverifikasi, dan dilaporkan secara resmi melalui Lazuardi Resources Management System (LRMS).
+                Laporan ini disusun, diverifikasi, dan dilaporkan secara resmi melalui portal RESERVE - RESource &amp; SERVice Excellence.
               </p>
             </div>
 

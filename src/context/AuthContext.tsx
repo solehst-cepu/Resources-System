@@ -63,7 +63,7 @@ function extractOAuthUrlError(): string | null {
       return 'Akses Google OAuth ditolak (403 access_denied): periksa Google Cloud Console → OAuth Consent Screen (pastikan status Published atau email Anda terdaftar di Test Users).';
     }
     if (rawDesc.includes('lazuardi.sch.id') || rawDesc.includes('Database error saving new user')) {
-      return 'Akses ditolak: hanya akun Google Workspace @lazuardi.sch.id yang diizinkan masuk ke LRMS.';
+      return 'Akses ditolak: hanya akun Google Workspace @lazuardi.sch.id yang diizinkan masuk ke RESERVE.';
     }
     return rawDesc;
   } catch {

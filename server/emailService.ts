@@ -36,7 +36,7 @@ export async function sendMonthlyPhotocopyReportEmail(
     };
   }
 
-  const subject = `[LRMS Lazuardi] Laporan Penggunaan Layanan Unit ${payload.unitName} — Periode ${payload.period}`;
+  const subject = `[RESERVE Lazuardi] Laporan Penggunaan Layanan Unit ${payload.unitName} — Periode ${payload.period}`;
 
   const breakdownRows = payload.requesterBreakdown
     .map(
@@ -59,7 +59,7 @@ export async function sendMonthlyPhotocopyReportEmail(
   const html = `
     <div style="font-family:'Plus Jakarta Sans',Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
       <div style="background:#1755CE;color:#ffffff;padding:20px 24px;">
-        <div style="font-size:16px;font-weight:700;">Lazuardi Resources Management System</div>
+        <div style="font-size:16px;font-weight:700;">RESERVE - RESource &amp; SERVice Excellence</div>
         <div style="font-size:12px;opacity:0.9;margin-top:4px;">Laporan Bulanan Penggunaan Layanan Unit: Fotokopi, Laminating &amp; Air Galon</div>
       </div>
       <div style="padding:24px;">
@@ -121,7 +121,7 @@ export async function sendMonthlyPhotocopyReportEmail(
         </div>
 
         <p style="margin-top:16px;font-size:12px;color:#64748b;">
-          Untuk detail per nomor order dan tanda tangan otorisasi cetak PDF/Excel, silakan masuk ke portal LRMS menggunakan akun Google @lazuardi.sch.id Anda.
+          Untuk detail per nomor order dan tanda tangan otorisasi cetak PDF/Excel, silakan masuk ke portal RESERVE menggunakan akun Google @lazuardi.sch.id Anda.
         </p>
       </div>
     </div>

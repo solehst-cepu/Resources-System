@@ -255,7 +255,7 @@ export function GoogleDriveView() {
         <div className="space-y-2">
           <h2 className="text-lg font-bold text-slate-900">Hubungkan Google Drive</h2>
           <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
-            Akses dokumen Google Drive Anda langsung dari LRMS untuk melampirkan berkas fotokopi,
+            Akses dokumen Google Drive Anda langsung dari RESERVE untuk melampirkan berkas fotokopi,
             mengarsipkan laporan PDF operasional, serta mengelola folder dan dokumen sekolah.
           </p>
         </div>
@@ -589,7 +589,7 @@ export function GoogleDriveView() {
                 autoFocus
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="Contoh: Arsip Laporan LRMS 2026"
+                placeholder="Contoh: Arsip Laporan RESERVE 2026"
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1755CE]/25"
               />
             </div>

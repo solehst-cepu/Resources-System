@@ -98,7 +98,7 @@ function WorkspaceShell() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm text-slate-600">
-        Memuat sesi Lazuardi Resources Management System...
+        Memuat sesi RESERVE - RESource &amp; SERVice Excellence...
       </div>
     );
   }
@@ -181,9 +181,9 @@ function WorkspaceShell() {
             </div>
             <div className="min-w-0">
               <div className="text-sm font-bold text-slate-900 tracking-tight truncate">
-                LRMS Lazuardi
+                RESERVE
               </div>
-              <div className="text-[11px] text-slate-500 truncate">Divisi Resources</div>
+              <div className="text-[10px] text-slate-500 truncate">RESource &amp; SERVice Excellence</div>
             </div>
           </div>
           <button
@@ -259,7 +259,7 @@ function WorkspaceShell() {
               <Menu className="w-4 h-4" />
             </button>
             <div className="text-xs text-slate-500 truncate">
-              <span>LRMS</span>
+              <span>RESERVE</span>
               <span className="mx-2 text-slate-300">/</span>
               <span className="font-semibold text-slate-900">{currentBreadcrumb}</span>
             </div>
